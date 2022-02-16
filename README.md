@@ -21,7 +21,6 @@ to test other video.
 `ascii_video.py`
 - The terminal crash after the program finish, terminate.
 - Still drop frames sometime.
-```
 
 ## Work on progress
 
