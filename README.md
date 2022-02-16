@@ -4,7 +4,6 @@
 
 run
 
-````
 ```
 python ascii_video.py
 ```
@@ -22,8 +21,8 @@ to test other video.
 `ascii_video.py`
 - The terminal crash after the program finish, terminate.
 - Still drop frames sometime.
-````
+```
 
 ## Work on progress
 
-```````````cpp` version for better performance.
+`cpp` version for better performance.
