@@ -1,0 +1,239 @@
+#include <opencv2/opencv.hpp>
+#include <opencv4/opencv2/core/mat.hpp>
+#include <curses.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <getopt.h>
+#include <string>
+#include <vector>
+#include <array>
+#include <codecvt>
+#include <locale>
+#include <wchar.h>
+#include <future>
+#include <chrono>
+#include <thread>
+
+using namespace cv;
+using namespace std;
+
+struct ascii_letter {
+  int char_r = 1, char_c = 1, cluster = 10;
+  wstring char_list = L" .:-=+*#%@";
+} letter;
+
+struct dither_method {
+  vector<array<int, 3>> values;
+  int total;
+} method;
+
+int scale = 1;
+string filename;
+uchar round_color[256], ascii_index[256];
+
+void prase_args(int argc, char** argv);
+Mat preprocessing(Mat img);
+vector<vector<wchar_t>> to_ascii(Mat img, int max_win_rows, int max_win_cols);
+
+int main(int argc, char **argv) {
+  setlocale(LC_ALL, "");
+
+  cchar_t wcval;
+  int max_win_rows, max_win_cols, vid_width, vid_height, mspf, win_rows, win_cols, row_pad, col_pad;
+  float ratio;
+  VideoCapture vid;
+  Mat frame, resized_img, gray_img;
+  vector<vector<wchar_t>> ascii_img;
+  prase_args(argc, argv);
+  // wstring_convert<codecvt_utf8<wchar_t>, wchar_t> converter;
+  codecvt_utf8<wchar_t> converter;
+
+  vid = VideoCapture(filename);
+  mspf = 1e3/vid.get(CAP_PROP_FPS);
+  vid_width = vid.get(CAP_PROP_FRAME_WIDTH);
+  vid_height = vid.get(CAP_PROP_FRAME_HEIGHT)/2;
+  ratio = (float) vid_width/vid_height;
+
+  WINDOW *w = initscr();
+  for (int f=0; f<vid.get(CAP_PROP_FRAME_COUNT); f++) {
+    vid.read(frame);
+    getmaxyx(w, max_win_rows, max_win_cols);
+    if (ratio >= (float) max_win_cols/max_win_rows) {
+      win_rows = (vid_height*max_win_cols)/vid_width;
+      win_cols = max_win_cols;
+      row_pad = (max_win_rows-win_rows)/2;
+      col_pad = 0;
+    } else {
+      win_rows = max_win_rows;
+      win_cols = (vid_width*max_win_rows)/vid_height;
+      row_pad = 0;
+      col_pad = (max_win_cols-win_cols)/2;
+    }
+
+    auto start = chrono::high_resolution_clock::now();
+    future<vector<vector<wchar_t>>> fut = async(launch::async, to_ascii, frame, win_rows, win_cols);
+    clear();
+    this_thread::sleep_for(chrono::milliseconds(mspf));
+    ascii_img = fut.get();
+    auto stop = chrono::high_resolution_clock::now();
+    // cout << "total:" << chrono::duration_cast<chrono::microseconds>(stop - start).count() << endl;
+    start = chrono::high_resolution_clock::now();
+    for (int r=0; r<ascii_img.size(); r++){ 
+      for (int c=0; c<ascii_img[r].size(); c++){ 
+        wchar_t wc[] = L"\0\0";
+        wc[0] = ascii_img[r][c];
+        setcchar(&wcval, wc, 0, 0, NULL);
+        mvadd_wch(r+row_pad, c+col_pad, &wcval);
+      }
+    }
+    stop = chrono::high_resolution_clock::now();
+    cout << "setchar:" << chrono::duration_cast<chrono::microseconds>(stop - start).count() << endl;
+    start = chrono::high_resolution_clock::now();
+    refresh();
+    stop = chrono::high_resolution_clock::now();
+    cout << "refresh:" << chrono::duration_cast<chrono::microseconds>(stop - start).count() << endl;
+  }
+  endwin();
+  return 0;
+}
+
+void prase_args(int argc, char **argv) {
+  bool inverse;
+  int opt;
+  vector<int> color_cluster;
+  wstring default_char_list = L" .:-=+*#%@";
+
+  while ((opt = getopt(argc, argv, "b:d:s:")) != -1) {
+    switch (opt) {
+      case 'b':
+        if (atoi(optarg) == 1) {
+          letter = ascii_letter({
+            2, 1,
+            5,
+            L"⠀⠁⠉⠋⠛⠄⠅⠍⠏⠟⠤⠥⠭⠯⠿⡤⡥⡭⡯⡿⣤⣥⣭⣯⣿"
+          });
+        } else if (atoi(optarg) == 2) {
+          letter = ascii_letter({
+            4, 2,
+            2,
+            L"⠀⠁⠈⠉⠂⠃⠊⠋⠐⠑⠘⠙⠒⠓⠚⠛⠄⠅⠌⠍⠆⠇⠎⠏⠔⠕⠜⠝⠖⠗⠞⠟"
+            "⠠⠡⠨⠩⠢⠣⠪⠫⠰⠱⠸⠹⠲⠳⠺⠻⠤⠥⠬⠭⠦⠧⠮⠯⠴⠵⠼⠽⠶⠷⠾⠿"
+            "⡀⡁⡈⡉⡂⡃⡊⡋⡐⡑⡘⡙⡒⡓⡚⡛⡄⡅⡌⡍⡆⡇⡎⡏⡔⡕⡜⡝⡖⡗⡞⡟"
+            "⡠⡡⡨⡩⡢⡣⡪⡫⡰⡱⡸⡹⡲⡳⡺⡻⡤⡥⡬⡭⡦⡧⡮⡯⡴⡵⡼⡽⡶⡷⡾⡿"
+            "⢀⢁⢈⢉⢂⢃⢊⢋⢐⢑⢘⢙⢒⢓⢚⢛⢄⢅⢌⢍⢆⢇⢎⢏⢔⢕⢜⢝⢖⢗⢞⢟"
+            "⢠⢡⢨⢩⢢⢣⢪⢫⢰⢱⢸⢹⢲⢳⢺⢻⢤⢥⢬⢭⢦⢧⢮⢯⢴⢵⢼⢽⢶⢷⢾⢿"
+            "⣀⣁⣈⣉⣂⣃⣊⣋⣐⣑⣘⣙⣒⣓⣚⣛⣄⣅⣌⣍⣆⣇⣎⣏⣔⣕⣜⣝⣖⣗⣞⣟"
+            "⣠⣡⣨⣩⣢⣣⣪⣫⣰⣱⣸⣹⣲⣳⣺⣻⣤⣥⣬⣭⣦⣧⣮⣯⣴⣵⣼⣽⣶⣷⣾⣿"
+          });
+        } else {
+          letter = ascii_letter({
+            1, 1,
+            9,
+            L"⠀⠂⠢⠪⡪⡺⡾⡿⣿"
+          });
+        }
+        break;
+      case 'd':
+        if (atoi(optarg) == 0) {
+          method = dither_method({{
+              {0, 1, 4},
+              {1, -1, 1},
+              {1, 0, 2},
+              {1, 1, 1}
+            },
+            8
+          });
+        } else {
+          method = dither_method({{
+              {0, 1, 4},
+              {0, 2, 2},
+              {1, -2, 1},
+              {1, -1, 2},
+              {1, 0, 4},
+              {1, 1, 2},
+              {1, 2, 1}
+            },
+            16
+          });
+        }
+        break;
+      case 's':
+        scale = atoi(optarg);
+        break;
+      default:
+        fprintf(stderr, "Usage: %s [-b quality_level | -d dither_method] FILE\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
+  }
+
+  float bin = 256./letter.cluster;
+
+  color_cluster.push_back(0);
+  for (int i=1; i<letter.cluster-1; i++)
+    color_cluster.push_back((int) round((float) i*(256./(letter.cluster-1))));
+  color_cluster.push_back(255);
+
+  for (int i=0; i<256; i++){
+    int cluster = min((int) (i/bin), letter.cluster-1);
+    round_color[i] = color_cluster[cluster];
+    ascii_index[i] = cluster;
+  }
+
+  if (optind >= argc) {
+    fprintf(stderr, "Expected argument after options\n");
+    exit(EXIT_FAILURE);
+  }
+  filename = string(argv[optind]);
+}
+
+vector<vector<wchar_t>> to_ascii(Mat raw_img, int win_rows, int win_cols) {
+  Mat img, resized_img;
+  int rows = win_rows*letter.char_r, cols = win_cols*letter.char_c, old_pixel, dither_pixel, ascii_idx, offset_y, offset_x;
+  uchar new_pixel, *ptr;
+  vector<int> offset(win_cols);
+  vector<vector<int>> err_table(rows+2, vector<int>(cols+4, 0));
+  vector<vector<wchar_t>> ascii_img(win_rows, vector<wchar_t>(win_cols, 0));
+  
+  
+  auto start = chrono::high_resolution_clock::now();
+  raw_img.convertTo(resized_img, 0);
+  auto stop = chrono::high_resolution_clock::now();
+  cout << "convert to:" << chrono::duration_cast<chrono::microseconds>(stop - start).count() << endl;
+
+  start = chrono::high_resolution_clock::now();
+  resize(resized_img, resized_img, Size(cols, rows), INTER_CUBIC);
+  stop = chrono::high_resolution_clock::now();
+  cout << "resize:" << chrono::duration_cast<chrono::microseconds>(stop - start).count() << endl;
+
+  start = chrono::high_resolution_clock::now();
+  cvtColor(resized_img, img, COLOR_BGR2GRAY);
+  stop = chrono::high_resolution_clock::now();
+  cout << "cvtColor:" << chrono::duration_cast<chrono::microseconds>(stop - start).count() << endl;
+
+  start = chrono::high_resolution_clock::now();
+  for (int y=0; y<rows; y++) {
+    ptr = img.ptr<uchar>(y);
+
+    for (int x=0; x<cols; x++) {
+      dither_pixel = ptr[x] + err_table[y][x+2];
+      old_pixel = min(max(dither_pixel, 0), 255);
+      new_pixel = round_color[old_pixel];
+
+      int err = dither_pixel - new_pixel;
+      for (array<int, 3> value: method.values)
+        err_table[y+value[0]][x+value[1]+2] += err*value[2]/method.total;
+
+      offset_y = y%letter.char_r;
+      offset_x = x%letter.char_c;
+      offset[x/letter.char_c] += ascii_index[new_pixel]*pow(letter.cluster, offset_y*letter.char_c+offset_x);
+      if (offset_y == letter.char_r-1 && offset_x == letter.char_c-1) {
+        ascii_img[y/letter.char_r][x/letter.char_c] = letter.char_list[offset[x/letter.char_c]];
+        offset[x/letter.char_c] = 0;
+      }
+    }
+  }
+  stop = chrono::high_resolution_clock::now();
+  cout << "Ascii Img:" << chrono::duration_cast<chrono::microseconds>(stop - start).count() << endl;
+  
+  return ascii_img;
+}

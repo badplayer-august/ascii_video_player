@@ -1,0 +1,3 @@
+/home/august/github/ascii_video_player/cpp/CMakeFiles/AsciiVideoPlayer.dir
+/home/august/github/ascii_video_player/cpp/CMakeFiles/edit_cache.dir
+/home/august/github/ascii_video_player/cpp/CMakeFiles/rebuild_cache.dir
