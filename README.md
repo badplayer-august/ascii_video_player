@@ -1,5 +1,8 @@
 # Ascii video player
 
+## Demo
+[![demo video](https://img.youtube.com/vi/g5M4U-x5d1A/0.jpg)](https://www.youtube.com/watch?v=g5M4U-x5d1A)
+
 ## Usage
 ### C++ (Fast and have braille code)
 In `cpp` directory run
